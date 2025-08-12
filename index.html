@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CUDA Chatbot - RAG Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a0d2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0d9ff;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(75, 0, 130, 0.2);
+            border-radius: 20px;
+            border: 1px solid rgba(147, 112, 219, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #9370db, #ba55d3, #da70d6);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            text-shadow: 0 0 30px rgba(186, 85, 211, 0.3);
+        }
+
+        .header p {
+            color: #c8b5ff;
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            background: rgba(0, 255, 127, 0.1);
+            border: 1px solid rgba(0, 255, 127, 0.3);
+            color: #00ff7f;
+        }
+
+        .status-indicator.offline {
+            background: rgba(255, 69, 0, 0.1);
+            border: 1px solid rgba(255, 69, 0, 0.3);
+            color: #ff4500;
+        }
+
+        .chat-container {
+            flex: 1;
+            background: rgba(25, 13, 46, 0.4);
+            border-radius: 20px;
+            border: 1px solid rgba(147, 112, 219, 0.2);
+            backdrop-filter: blur(15px);
+            box-shadow: 0 8px 32px rgba(75, 0, 130, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: 60vh;
+            scrollbar-width: thin;
+            scrollbar-color: #9370db rgba(25, 13, 46, 0.5);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(25, 13, 46, 0.5);
+            border-radius: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: linear-gradient(45deg, #9370db, #ba55d3);
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message.assistant {
+            text-align: left;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 80%;
+            padding: 15px 20px;
+            border-radius: 18px;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #9370db 0%, #8a2be2 100%);
+            color: white;
+            border-bottom-right-radius: 5px;
+            box-shadow: 0 4px 15px rgba(147, 112, 219, 0.4);
+        }
+
+        .message.assistant .message-content {
+            background: rgba(75, 0, 130, 0.3);
+            border: 1px solid rgba(147, 112, 219, 0.3);
+            color: #e0d9ff;
+            border-bottom-left-radius: 5px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(75, 0, 130, 0.2);
+        }
+
+        .message-label {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-bottom: 5px;
+            color: #c8b5ff;
+        }
+
+        .input-container {
+            padding: 20px;
+            background: rgba(25, 13, 46, 0.6);
+            border-top: 1px solid rgba(147, 112, 219, 0.2);
+        }
+
+        .input-form {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .message-input {
+            flex: 1;
+            background: rgba(75, 0, 130, 0.2);
+            border: 1px solid rgba(147, 112, 219, 0.4);
+            border-radius: 25px;
+            padding: 15px 20px;
+            color: #e0d9ff;
+            font-size: 1rem;
+            resize: none;
+            min-height: 50px;
+            max-height: 120px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #9370db;
+            box-shadow: 0 0 20px rgba(147, 112, 219, 0.3);
+            background: rgba(75, 0, 130, 0.3);
+        }
+
+        .message-input::placeholder {
+            color: #8a7ca8;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #9370db 0%, #8a2be2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 15px 25px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(147, 112, 219, 0.3);
+            min-width: 80px;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(147, 112, 219, 0.4);
+            background: linear-gradient(135deg, #a569d4 0%, #9932cc 100%);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #9370db;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(147, 112, 219, 0.3);
+            border-top: 3px solid #9370db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #c8b5ff;
+            opacity: 0.8;
+        }
+
+        .welcome-message h3 {
+            color: #9370db;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .sample-questions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .sample-question {
+            background: rgba(147, 112, 219, 0.1);
+            border: 1px solid rgba(147, 112, 219, 0.3);
+            border-radius: 15px;
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .sample-question:hover {
+            background: rgba(147, 112, 219, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(147, 112, 219, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .message-content {
+                max-width: 95%;
+            }
+
+            .input-form {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .send-btn {
+                align-self: stretch;
+            }
+        }
+
+        /* Code blocks styling */
+        pre {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(147, 112, 219, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        code {
+            color: #ff79c6;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 CUDA RAG Assistant</h1>
+            <p>Local RAG system powered by HuggingFace embeddings & Groq LLM</p>
+            <div id="status-indicator" class="status-indicator offline">
+                Checking document status...
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-messages" id="chat-messages">
+                <div class="welcome-message">
+                    <h3>👋 Welcome to your Local CUDA RAG Assistant!</h3>
+                    <p>Powered by local HuggingFace embeddings + Groq LLM. I can help you with:</p>
+                    <div class="sample-questions">
+                        <div class="sample-question" onclick="askQuestion('What is CUDA and how does it work?')">
+                            What is CUDA and how does it work?
+                        </div>
+                        <div class="sample-question" onclick="askQuestion('How do I optimize memory access in CUDA?')">
+                            How do I optimize memory access in CUDA?
+                        </div>
+                        <div class="sample-question" onclick="askQuestion('What are CUDA streams and how do I use them?')">
+                            What are CUDA streams and how do I use them?
+                        </div>
+                        <div class="sample-question" onclick="askQuestion('Explain CUDA thread hierarchy')">
+                            Explain CUDA thread hierarchy
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Thinking...</p>
+            </div>
+
+            <div class="input-container">
+                <form class="input-form" id="chat-form">
+                    <textarea 
+                        class="message-input" 
+                        id="message-input" 
+                        placeholder="Ask me about CUDA programming..." 
+                        rows="1"
+                    ></textarea>
+                    <button type="submit" class="send-btn" id="send-btn">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let messages = [];
+        
+        // Check document status on load
+        async function checkStatus() {
+            try {
+                const response = await fetch('/status');
+                const status = await response.json();
+                const indicator = document.getElementById('status-indicator');
+                
+                if (status.document_loaded) {
+                    indicator.textContent = `✅ Local RAG Ready (${status.num_chunks} chunks)`;
+                    indicator.classList.remove('offline');
+                } else {
+                    indicator.textContent = '❌ Document not loaded - basic mode only';
+                    indicator.classList.add('offline');
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        }
+
+        function askQuestion(question) {
+            document.getElementById('message-input').value = question;
+            sendMessage();
+        }
+
+        function addMessage(content, isUser = false) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+            
+            messageDiv.innerHTML = `
+                <div class="message-label">${isUser ? 'You' : 'CUDA Assistant'}</div>
+                <div class="message-content">${formatMessage(content)}</div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            // Hide welcome message after first interaction
+            const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.style.display = 'none';
+            }
+        }
+
+        function formatMessage(content) {
+            // Simple markdown-like formatting
+            return content
+                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+
+        async function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const sendBtn = document.getElementById('send-btn');
+            const loading = document.getElementById('loading');
+            
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, true);
+            
+            // Clear input and disable button
+            messageInput.value = '';
+            sendBtn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        messages: messages
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addMessage(data.reply);
+                    messages = data.messages;
+                } else {
+                    addMessage(`Error: ${data.error || 'Something went wrong'}`);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Sorry, I encountered a connection error. Please try again.');
+            } finally {
+                sendBtn.disabled = false;
+                loading.classList.remove('show');
+                messageInput.focus();
+            }
+        }
+
+        // Auto-resize textarea
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+
+        // Event listeners
+        document.getElementById('chat-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+
+        document.getElementById('message-input').addEventListener('input', (e) => {
+            autoResize(e.target);
+        });
+
+        document.getElementById('message-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            checkStatus();
+            document.getElementById('message-input').focus();
+        });
+    </script>
+</body>
+</html>
